@@ -42,6 +42,6 @@ defmodule MnesiaRestore do
   end
 
   defp file_name(path) do
-    "#{path}/mnesia-backup-#{System.system_time(:second)}@#{Node.self()}"
+    "#{path}/mnesia-backup-#{System.system_time(:second)}.#{Node.self()}"
   end
 end
