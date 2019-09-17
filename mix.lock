@@ -1,0 +1,3 @@
+%{
+  "ex_unit_clustered_case": {:hex, :ex_unit_clustered_case, "0.4.0", "8ab43bee163f929cee471d7198d561d32eab2dc2185e822b9d76c812ad1089d6", [:mix], [], "hexpm"},
+}
