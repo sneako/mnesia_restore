@@ -6,6 +6,8 @@ defmodule MnesiaRestore do
   replace all instances of the old node name with the new node name.
 
   You should be able to restore from the renamed backup.
+
+  Adapted from the [Mnesia User's Guide](http://erlang.org/documentation/doc-5.8.1/lib/mnesia-4.4.15/doc/html/Mnesia_chap7.html#id74479)
   """
   def rename_backup(from, to, backup_source, backup_dest) do
     switch = fn
@@ -46,6 +48,9 @@ defmodule MnesiaRestore do
     :mnesia.traverse_backup(backup_source, backup_dest, convert, :switched)
   end
 
+  @doc """
+  Load a backup
+  """
   def restore(path_to_renamed, opts \\ [default_op: :recreate_tables]),
     do: :mnesia.restore(path_to_renamed, opts)
 end

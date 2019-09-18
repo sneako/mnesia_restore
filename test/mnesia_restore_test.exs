@@ -1,39 +1,44 @@
 defmodule MnesiaRestoreTest do
-  use ExUnit.ClusteredCase
+  use ExUnit.ClusteredCase, async: false
   doctest MnesiaRestore
   alias ExUnit.ClusteredCase.Cluster
 
   @backup1 "/tmp/mnesia_restore_test_backup1"
   @renamed1 "/tmp/mnesia_restore_test_renamed_backup1"
 
+  @backup2 "/tmp/mnesia_restore_test_backup2"
+  @renamed2 "/tmp/mnesia_restore_test_renamed_backup2"
+
   setup do
     on_exit(fn ->
       [
         @backup1,
-        @renamed1
+        @renamed1,
+        @backup2,
+        @renamed2
       ]
       |> Enum.each(&File.rm/1)
     end)
   end
 
   scenario "given two nodes", cluster_size: 2 do
-    test "create a backup and restore it on a new cluster with default recreate_tables option", %{
+    test "create a backup and restore it on a new node with default recreate_tables option", %{
       cluster: cluster
     } do
       [primary, secondary] = Cluster.members(cluster)
 
       create_schema(primary)
-      create_table(:test_table, primary)
+      create_table(:table1, primary)
 
       # insert some rows on primary node
       for i <- 1..10 do
-        write_mfa(:test_table, i, i)
+        write_mfa(:table1, i, i)
       end
       |> run_on(primary)
 
       # data exists
       for i <- 1..10 do
-        {{:mnesia, :dirty_read, [:test_table, i]}, [{:test_table, i, i}]}
+        {{:mnesia, :dirty_read, [:table1, i]}, [{:table1, i, i}]}
       end
       |> run_and_assert_on(primary)
 
@@ -54,14 +59,70 @@ defmodule MnesiaRestoreTest do
       create_schema(secondary)
 
       # restore the renamed backup on the secondary node
-      [{{MnesiaRestore, :restore, [to_charlist(@renamed1)]}, {:atomic, [:test_table]}}]
+      [{{MnesiaRestore, :restore, [to_charlist(@renamed1)]}, {:atomic, [:table1]}}]
       |> run_and_assert_on(secondary)
 
       # read the data on the new node
       for i <- 1..10 do
-        {{:mnesia, :dirty_read, [:test_table, i]}, [{:test_table, i, i}]}
+        {{:mnesia, :dirty_read, [:table1, i]}, [{:table1, i, i}]}
       end
       |> run_and_assert_on(secondary)
+
+      cleanup([primary, secondary], :table1)
+    end
+
+    test "can merge a backup in to existing data with keep_tables option", %{
+      cluster: cluster
+    } do
+      [primary, secondary] = Cluster.members(cluster)
+
+      # prepare primary node
+      create_schema(primary)
+      create_table(:table2, primary)
+
+      # prepare second node,
+      create_schema(secondary)
+      create_table(:table2, secondary)
+
+      # insert some rows on secondary node that should still exist after the restore
+      for i <- 10..20 do
+        write_mfa(:table2, i, i * 10)
+      end
+      |> run_on(primary)
+
+      # insert some rows on primary node
+      for i <- 1..10 do
+        write_mfa(:table2, i, i * 10)
+      end
+      |> run_on(primary)
+
+      # take a backup
+      [{:mnesia, :backup, [to_charlist(@backup2)]}]
+      |> run_on(primary)
+
+      # rename the backup
+      assert {:ok, :switched} =
+               MnesiaRestore.rename_backup(
+                 primary,
+                 secondary,
+                 to_charlist(@backup2),
+                 to_charlist(@renamed2)
+               )
+
+      # restore the renamed backup on the secondary node
+      [
+        {{MnesiaRestore, :restore, [to_charlist(@renamed2), [keep_tables: [:table2]]]},
+         {:atomic, [:table2]}}
+      ]
+      |> run_and_assert_on(secondary)
+
+      # read all of the merged data on the new node
+      for i <- 1..20 do
+        {{:mnesia, :dirty_read, [:table2, i]}, [{:table2, i, i * 10}]}
+      end
+      |> run_and_assert_on(secondary)
+
+      cleanup([primary, secondary], :table2)
     end
   end
 
@@ -102,5 +163,10 @@ defmodule MnesiaRestoreTest do
       :mnesia.write({table, k, v})
     end
     |> :mnesia.transaction()
+  end
+
+  defp cleanup(nodes, table) do
+    delete = [{:mnesia, :delete_table, [table]}]
+    Enum.each(nodes, &run_on(delete, &1))
   end
 end
