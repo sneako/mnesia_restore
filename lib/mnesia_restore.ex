@@ -9,15 +9,10 @@ defmodule MnesiaRestore do
 
   Adapted from the [Mnesia User's Guide](http://erlang.org/documentation/doc-5.8.1/lib/mnesia-4.4.15/doc/html/Mnesia_chap7.html#id74479)
   """
-  def rename_backup(from, to, backup_source, backup_dest) do
-    switch = fn
-      node when node == from -> to
-      node -> node
-    end
-
+  def rename_backup(to_nodes, backup_source, backup_dest) do
     convert = fn
-      {:schema, :db_nodes, nodes}, acc ->
-        {[{:schema, :db_nodes, Enum.map(nodes, switch)}], acc}
+      {:schema, :db_nodes, _nodes}, acc ->
+        {[{:schema, :db_nodes, to_nodes}], acc}
 
       {:schema, :version, version}, acc ->
         {[{:schema, :version, version}], acc}
@@ -29,12 +24,9 @@ defmodule MnesiaRestore do
         keys = [:ram_copies, :disc_copies, :disc_only_copies]
 
         opt_switch = fn
-          {k, {a, v}} ->
-            {k, {a, switch.(v)}}
-
           {k, v} ->
-            case Enum.member?(keys, k) do
-              true -> {k, Enum.map(v, switch)}
+            case Enum.member?(keys, k) and not Enum.empty?(v) do
+              true -> {k, to_nodes}
               false -> {k, v}
             end
         end
