@@ -41,7 +41,10 @@ defmodule MnesiaRestore do
   end
 
   @doc """
-  Load a backup
+  If your backup is too large, you may have to use `:mnesia.install_fallback/1,2` instead.
+  Once the :install_fallback function finishes, just restart the node and the fallback will be used.
+
+  I tried to load a 4GB backup on a server with 32GB RAM, and it crashed the BEAM because it used all memory.
   """
   def restore(path_to_renamed, opts \\ [default_op: :recreate_tables]),
     do: :mnesia.restore(path_to_renamed, opts)
