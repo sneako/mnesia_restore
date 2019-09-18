@@ -1,5 +1,12 @@
 defmodule MnesiaRestore do
+  @doc """
+  Use `:mnesia.backup(backup_file_path)` on the node you wish to backup.
 
+  Then, on any node which can access that backup file, use this function to
+  replace all instances of the old node name with the new node name.
+
+  You should be able to restore from the renamed backup.
+  """
   def rename_backup(from, to, backup_source, backup_dest) do
     switch = fn
       node when node == from -> to

@@ -17,18 +17,13 @@ defmodule MnesiaRestoreTest do
   end
 
   scenario "given two nodes", cluster_size: 2 do
-    test "create a backup and restore it on a new cluster with recreate_tables option", %{
+    test "create a backup and restore it on a new cluster with default recreate_tables option", %{
       cluster: cluster
     } do
       [primary, secondary] = Cluster.members(cluster)
 
-      [
-        {:mnesia, :stop, []},
-        {:mnesia, :create_schema, [[primary]]},
-        {:mnesia, :start, []},
-        create_table_mfa(:test_table, primary)
-      ]
-      |> run_on(primary)
+      create_schema(primary)
+      create_table(:test_table, primary)
 
       # insert some rows on primary node
       for i <- 1..10 do
@@ -43,24 +38,8 @@ defmodule MnesiaRestoreTest do
       |> run_and_assert_on(primary)
 
       # take a backup
-      [
-        # {:mnesia, :activate_checkpoint, [[{:name, :checkpoint}, {:max, [:test_table]}]]},
-        {:mnesia, :backup, [to_charlist(@backup1)]}
-      ]
+      [{:mnesia, :backup, [to_charlist(@backup1)]}]
       |> run_on(primary)
-
-      # ensure the backup is good, restore it on the node it just came from
-      [
-        {{:mnesia, :start, []}, :ok},
-        {{:mnesia, :delete_table, [:test_table]}, {:atomic, :ok}},
-        {{MnesiaRestore, :restore, [to_charlist(@backup1)]}, {:atomic, [:test_table]}}
-      ]
-      |> run_and_assert_on(primary)
-
-      for i <- 1..10 do
-        {{:mnesia, :dirty_read, [:test_table, i]}, [{:test_table, i, i}]}
-      end
-      |> run_and_assert_on(primary)
 
       # rename the backup
       assert {:ok, :switched} =
@@ -71,23 +50,14 @@ defmodule MnesiaRestoreTest do
                  to_charlist(@renamed1)
                )
 
-      [
-        {:mnesia, :stop, []},
-        {:mnesia, :create_schema, [[secondary]]},
-        {:mnesia, :start, []}
-      ]
-      |> run_on(secondary)
+      # prepare second node,
+      create_schema(secondary)
 
       # restore the renamed backup on the secondary node
-      [
-        {{MnesiaRestore, :restore, [to_charlist(@renamed1)]}, {:atomic, [:test_table]}}
-      ]
+      [{{MnesiaRestore, :restore, [to_charlist(@renamed1)]}, {:atomic, [:test_table]}}]
       |> run_and_assert_on(secondary)
 
       # read the data on the new node
-      [{:mnesia, :dirty_all_keys, [:test_table]}]
-      |> run_on(secondary)
-
       for i <- 1..10 do
         {{:mnesia, :dirty_read, [:test_table, i]}, [{:test_table, i, i}]}
       end
@@ -95,8 +65,20 @@ defmodule MnesiaRestoreTest do
     end
   end
 
-  defp create_table_mfa(name, node) do
-    {:mnesia, :create_table, [name, [{:attributes, [:id, :value]}, {:disc_copies, [node]}]]}
+  defp create_schema(node) do
+    [
+      {:mnesia, :stop, []},
+      {:mnesia, :create_schema, [[node]]},
+      {:mnesia, :start, []}
+    ]
+    |> run_on(node)
+  end
+
+  defp create_table(name, node) do
+    [
+      {:mnesia, :create_table, [name, [{:attributes, [:id, :value]}, {:disc_copies, [node]}]]}
+    ]
+    |> run_on(node)
   end
 
   defp write_mfa(table, key, value) do
